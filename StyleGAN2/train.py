@@ -353,7 +353,7 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
                     for iii in range(eva_bs):
                         utils.save_image(sample_fid[iii].detach(),
                                          '%s/f_%s.png' % (eva_dir, str(iii + ii * eva_bs)),
-                                         normalize=True, range=(-1, 1))
+                                         normalize=True)
 
             print('-------------Eva FID------------')
             fid = fid_score.calculate_fid_given_paths([eva_dir, '../dataset/%s/img' % args.dataset],
