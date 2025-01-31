@@ -7,15 +7,43 @@ import torch.optim as optim
 import torch.utils.data
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
+import torchvision.utils as vutils
+from torchmetrics.image.fid import FrechetInceptionDistance
 from model import ResDiscriminator32, ResGenerator32
 from regan import Regan_training
 import numpy as np
 import warnings
+
 warnings.filterwarnings("ignore")
 
+def save_generated_images(netG, epoch, device, noise_size=128, num_images=16):
+    """Generate and save images from the generator."""
+    with torch.no_grad():
+        fixed_noise = torch.randn(num_images, noise_size, device=device)
+        fake_images = netG(fixed_noise).cpu()
+        os.makedirs("generated_images", exist_ok=True)
+        vutils.save_image(fake_images, f'generated_images/generated_epoch_{epoch}.png', normalize=True, nrow=4)
+        print(f"Generated images saved for epoch {epoch}")
+
+def compute_fid_score(netG, real_images, device, noise_size=128, num_samples=1024):
+    """Compute FID score between real and generated images."""
+    fid = FrechetInceptionDistance(feature=2048).to(device)
+
+    # Get real images
+    real_images = real_images.to(device)
+    fid.update(real_images, real=True)
+
+    # Generate fake images
+    with torch.no_grad():
+        noise = torch.randn(num_samples, noise_size, device=device)
+        fake_images = netG(noise)
+        fid.update(fake_images, real=False)
+
+    fid_score = fid.compute().item()
+    print(f"FID Score: {fid_score}")
+    return fid_score
 
 def main():
-    # Create the dataset
     dataset = dset.CIFAR10(root=args.dataroot,
                            transform=transforms.Compose([
                                transforms.Resize(args.image_size),
@@ -24,58 +52,42 @@ def main():
                                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                            ]), download=True, train=True)
 
-    # Make sub-training dataset
     subset = torch.utils.data.Subset(dataset, np.arange(int(len(dataset) * args.data_ratio)))
-    # Create the dataloader
     dataloader = torch.utils.data.DataLoader(subset, batch_size=args.batch_size,
                                              shuffle=True, num_workers=args.workers)
 
     netD = ResDiscriminator32().to(device)
     netG = Regan_training(ResGenerator32(args.noise_size).to(device), sparsity=args.sparsity)
 
-    # Setup Adam optimizers for both G and D
     optimizerD = optim.Adam(netD.parameters(), args.lr, (0, 0.9))
     optimizerG = optim.Adam(netG.parameters(), args.lr, (0, 0.9))
 
     print("Starting Training Loop...")
 
     flag_g = 1
+    fid_scores = []
 
     for epoch in range(1, args.epoch + 1):
 
         if args.regan:
-            # Warm-up phase, do not enable the ReGAN training
             if epoch < args.warmup_epoch + 1:
-                print('current is warmup training')
+                print('Warmup training...')
                 netG.train_on_sparse = False
-
-            # Warm-up phase finished, get into Sparse training phase
             elif epoch > args.warmup_epoch and flag_g < args.g + 1:
-                print('epoch %d, current is sparse training' % epoch)
-                # turn training mode to sparse, update mask
+                print(f'Epoch {epoch}, Sparse training...')
                 netG.turn_training_mode(mode='sparse')
-                # make sure the learning rate of sparse phase is the original one
                 if flag_g == 1:
-                    print('turn learning rate to normal')
                     for params in optimizerG.param_groups:
                         params['lr'] = args.lr
-                flag_g = flag_g + 1
-
-            # Sparse training phase finished, get into dense training phase
+                flag_g += 1
             elif epoch > args.warmup_epoch and flag_g < 2 * args.g + 1:
-                print('epoch %d, current is dense training' % epoch)
-                # turn training mode to dense
+                print(f'Epoch {epoch}, Dense training...')
                 netG.turn_training_mode(mode='dense')
-                # make sure the learning rate of Dense phase is 10 times smaller than the original one
                 if flag_g == args.g + 1:
-                    print('turn learning rate to 10 times smaller')
                     for params in optimizerG.param_groups:
                         params['lr'] = args.lr * 0.1
-                flag_g = flag_g + 1
-
-                # When curren Sparse-Dense pair training finished, get into next pair training
+                flag_g += 1
                 if flag_g == 2 * args.g + 1:
-                    print('clean flag')
                     flag_g = 1
 
         for i, data in enumerate(dataloader, 0):
@@ -107,18 +119,29 @@ def main():
                 errG.backward()
                 D_G_z2 = output.mean().item()
 
-                # Eliminate weights and their gradients
                 if args.regan and netG.train_on_sparse:
                     netG.apply_masks()
 
                 optimizerG.step()
 
-            # Output training stats
             if i % 50 == 0:
                 print('[%4d/%4d][%3d/%3d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
                       % (epoch, args.epoch, i, len(dataloader),
                          errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
 
+        # Save generated images every 10 epochs
+        if epoch % 10 == 0:
+            save_generated_images(netG, epoch, device, args.noise_size)
+
+        # Compute FID score every 10 epochs
+        if epoch % 10 == 0:
+            fid_score = compute_fid_score(netG, real_cpu, device, args.noise_size)
+            fid_scores.append((epoch, fid_score))
+
+    # Save FID scores to file
+    with open("fid_scores.txt", "w") as f:
+        for epoch, score in fid_scores:
+            f.write(f"Epoch {epoch}: FID {score}\n")
 
 if __name__ == '__main__':
     model_name = 'SNGAN'
@@ -142,6 +165,6 @@ if __name__ == '__main__':
     if not os.path.exists(args.dataroot):
         os.makedirs(args.dataroot)
 
-    device = "cuda"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     main()
