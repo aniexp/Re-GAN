@@ -25,26 +25,6 @@ def save_generated_images(netG, epoch, device, noise_size=128, num_images=16):
         vutils.save_image(fake_images, f'generated_images/generated_epoch_{epoch}.png', normalize=True, nrow=4)
         print(f"Generated images saved for epoch {epoch}")
 
-def compute_fid_score(netG, real_images, device, noise_size=128, num_samples=1024):
-    """Compute FID score between real and generated images."""
-    fid = FrechetInceptionDistance(feature=2048).to(device)
-
-    # Convert real images to uint8
-    real_images = ((real_images * 0.5 + 0.5) * 255).clamp(0, 255).byte()
-    real_images = real_images.to(device)
-    fid.update(real_images, real=True)
-
-    # Generate fake images and convert to uint8
-    with torch.no_grad():
-        noise = torch.randn(num_samples, noise_size, device=device)
-        fake_images = netG(noise)
-        fake_images = ((fake_images * 0.5 + 0.5) * 255).clamp(0, 255).byte()
-        fid.update(fake_images, real=False)
-
-    fid_score = fid.compute().item()
-    print(f"FID Score: {fid_score}")
-    return fid_score
-
 def main():
     dataset = dset.CIFAR10(root=args.dataroot,
                            transform=transforms.Compose([
