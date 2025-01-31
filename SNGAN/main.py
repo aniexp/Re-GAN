@@ -29,14 +29,16 @@ def compute_fid_score(netG, real_images, device, noise_size=128, num_samples=102
     """Compute FID score between real and generated images."""
     fid = FrechetInceptionDistance(feature=2048).to(device)
 
-    # Get real images
+    # Convert real images to uint8
+    real_images = ((real_images * 0.5 + 0.5) * 255).clamp(0, 255).byte()
     real_images = real_images.to(device)
     fid.update(real_images, real=True)
 
-    # Generate fake images
+    # Generate fake images and convert to uint8
     with torch.no_grad():
         noise = torch.randn(num_samples, noise_size, device=device)
         fake_images = netG(noise)
+        fake_images = ((fake_images * 0.5 + 0.5) * 255).clamp(0, 255).byte()
         fid.update(fake_images, real=False)
 
     fid_score = fid.compute().item()
