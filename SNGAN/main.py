@@ -116,14 +116,8 @@ def main():
             save_generated_images(netG, epoch, device, args.noise_size)
 
         # Compute FID score every 10 epochs
-        if epoch % 10 == 0:
-            fid_score = compute_fid_score(netG, real_cpu, device, args.noise_size)
-            fid_scores.append((epoch, fid_score))
 
     # Save FID scores to file
-    with open("fid_scores.txt", "w") as f:
-        for epoch, score in fid_scores:
-            f.write(f"Epoch {epoch}: FID {score}\n")
 
 if __name__ == '__main__':
     model_name = 'SNGAN'
