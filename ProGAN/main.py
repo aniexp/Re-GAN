@@ -46,7 +46,7 @@ def train(epoch, num_epochs, critic, gen, loader, step, opt_critic, opt_gen):
         alpha = min(alpha, 1)
 
         # Save generated images
-        if batch_idx % 2 == 0:  # Adjust this based on how often you want to save
+        if batch_idx % 100 == 0:  # Adjust this based on how often you want to save
             save_image(fake, f'generated_images/epoch_{epoch}_batch_{batch_idx}.png', normalize=True)
 
         # Output training stats
