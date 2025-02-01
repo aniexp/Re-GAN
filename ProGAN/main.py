@@ -4,41 +4,39 @@ from model import Discriminator, Generator
 import argparse
 from utils import get_loader, gradient_penalty
 from regan import Regan_training
-
+from torchvision.utils import save_image
+import os
+if not os.path.exists('generated_images'):
+    os.makedirs('generated_images')
 
 def train(epoch, num_epochs, critic, gen, loader, step, opt_critic, opt_gen):
     for batch_idx, (real, _) in enumerate(loader, 0):
-
         alpha = (batch_idx + epoch * len(loader)) / (num_epochs * len(loader))
-
         real = real.to(device)
         cur_batch_size = real.shape[0]
 
-        # Train Critic: max E[critic(real)] - E[critic(fake)] <-> min -E[critic(real)] + E[critic(fake)]
-        # which is equivalent to minimizing the negative of the expression
+        # Train Critic
         noise = torch.randn(cur_batch_size, args.z_dim, 1, 1).to(device)
-
         fake = gen(noise, alpha, step)
         critic_real = critic(real, alpha, step)
         critic_fake = critic(fake.detach(), alpha, step)
         gp = gradient_penalty(critic, real, fake, alpha, step, device=device)
         loss_critic = (
-                -(torch.mean(critic_real) - torch.mean(critic_fake))
-                + args.lambda_gp * gp
-                + (0.001 * torch.mean(critic_real ** 2))
+            -(torch.mean(critic_real) - torch.mean(critic_fake))
+            + args.lambda_gp * gp
+            + (0.001 * torch.mean(critic_real ** 2))
         )
 
         opt_critic.zero_grad()
         loss_critic.backward()
         opt_critic.step()
 
-        # Train Generator: max E[critic(gen_fake)] <-> min -E[critic(gen_fake)]
+        # Train Generator
         gen_fake = critic(fake, alpha, step)
         loss_gen = -torch.mean(gen_fake)
 
         opt_gen.zero_grad()
         loss_gen.backward()
-        # scaler_gen.step(opt_gen)
 
         if args.regan and gen.train_on_sparse:
             gen.apply_masks()
@@ -46,6 +44,10 @@ def train(epoch, num_epochs, critic, gen, loader, step, opt_critic, opt_gen):
         opt_gen.step()
 
         alpha = min(alpha, 1)
+
+        # Save generated images
+        if batch_idx % 2 == 0:  # Adjust this based on how often you want to save
+            save_image(fake, f'generated_images/epoch_{epoch}_batch_{batch_idx}.png', normalize=True)
 
         # Output training stats
         if batch_idx % 50 == 0:
