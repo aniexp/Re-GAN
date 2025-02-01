@@ -1,3 +1,4 @@
+import torch
 import torch.optim as optim
 from model import Discriminator, Generator
 import argparse
