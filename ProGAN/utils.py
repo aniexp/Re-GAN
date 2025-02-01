@@ -5,22 +5,30 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from math import log2
 
-
 def get_loader(image_size, workers, bs, dataroot, data_ratio):
     transform = transforms.Compose(
         [
             transforms.Resize((image_size, image_size)),
             transforms.ToTensor(),
-            # transforms.RandomHorizontalFlip(p=0.5),
             transforms.Normalize(
                 [0.5 for _ in range(3)],
                 [0.5 for _ in range(3)],
             ),
         ]
     )
-    batch_size = bs[int(log2(image_size / 4))]
-    dataset = datasets.CIFAR10(root=dataroot, transform=transform)
-    subset = torch.utils.data.Subset(dataset, np.arange(int(len(dataset) * data_ratio)))
+    batch_size = bs[int(log2(image_size / 4))]  # Calculate the batch size based on image size
+    # CIFAR10 dataset loading, including the download option
+    dataset = datasets.CIFAR10(root=dataroot, transform=transform, download=True)
+    
+    # Ensure the subset size is valid (between 0 and 1)
+    data_len = len(dataset)
+    subset_len = int(data_len * data_ratio)
+    subset_len = max(1, subset_len)  # Ensure at least 1 sample is included in the subset
+
+    # Create the subset of the dataset
+    subset = torch.utils.data.Subset(dataset, np.arange(subset_len))
+    
+    # DataLoader for batching the data
     loader = DataLoader(
         subset,
         batch_size=batch_size,
@@ -29,7 +37,6 @@ def get_loader(image_size, workers, bs, dataroot, data_ratio):
         pin_memory=True,
     )
     return loader, dataset
-
 
 def gradient_penalty(critic, real, fake, alpha, train_step, device="cpu"):
     BATCH_SIZE, C, H, W = real.shape
@@ -52,5 +59,3 @@ def gradient_penalty(critic, real, fake, alpha, train_step, device="cpu"):
     gradient_norm = gradient.norm(2, dim=1)
     gradient_penalty = torch.mean((gradient_norm - 1) ** 2)
     return gradient_penalty
-
-
